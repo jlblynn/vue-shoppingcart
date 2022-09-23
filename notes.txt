@@ -1,0 +1,382 @@
+# Working with HTTP in Vue.js
+
+This repository contains the code for the HTTP section from the [Vue.js: From Beginner to Professional course](https://l.codingexplained.com/course/vuejs?src=github).
+
+## Getting up and Running
+
+``` bash
+# Install the dependencies
+npm install
+
+# Serve with hot reload at http://localhost:8080
+npm run dev
+
+# Build for production with minification
+npm run build
+```
+
+##Setting up vue-resource
+The plugin for Vue.js provides services for making web requests and handle responses using a XMLHttpRequest or JSONP.
+
+npm install vue-resource --save
+
+Import it into the main.js file:
+
+import VueResource from 'vue-resource';
+
+Then pass it to the use method on the Vue class:
+
+Vue.use(VueResource);
+
+Use: npm run dev
+We will be serving on localhost:3000
+
+##Fetching data with GET requests
+Let's retrieve the products through a http request.
+Open up the ProductList component.
+Add a new created lifecycle hook.
+To access vue-resource we use $http on the component.
+Invoke a get method on this and pass in the request url:
+
+created() {
+  this.$http.get('http://localhost:3000/products');
+}
+
+This returns the list of products in JSON.
+Issuing a http request is asynchronis the get method returns a promise.
+So we should use the then method for adding a callback when the promise resolves/server responds.
+We will have a callback for success and one for an error.
+
+Add the then method and give it the 2 args for success and an error.
+Each one takes response as an arg.
+
+In the success callback we have the response object available.
+There a few methods available to us, we will use the json() method as that's what the server is returning.
+Unfortunatley we can't do this.products = response.json() because the json() method returns a promise because it's asynchronis.
+Instead return the value and chain another callback to the promise chain with the then method.
+This callback will recieve the result of the first one, which will be the parsed json.
+The second call back takes the products parsed from json, which we can then assign those products to the product data property:
+
+created() {
+  this.$http.get('http://localhost:3000/products')
+    .then(
+      response => {
+        return response.json();
+      },
+      response => {
+        alert("Error");
+      }
+    ).then(products => this.products = products);
+}
+
+We can refactor it as our call backs are single line expressions:
+
+created() {
+  this.$http.get('http://localhost:3000/products')
+      .then(
+          response => response.json(),
+          response => alert("Error")
+      ).then(products => this.products = products);
+}
+
+We passed the json in the response body but we don't need to do this.
+vue-resource does this automatically if the response contains a content type header with a value of application/json.
+If we didn't pass the json explicitly we couldn't access the object within the body property in the response object.
+We did it to make the example easier to read and understand.
+
+##URI templates
+Now let's make it so we can fetch a product with a productId in the ViewProduct component.
+We need to include the id of the product within the url.
+Instead of concatenating the url we will use uri templates that vue-resource supports.
+
+In the ViewProduct component add in the http request.
+We add parameters to a url by using names in curly braces, similar to dynamic segments.
+Use the $http get method to find the products and the productId:
+
+getProduct(productId) {
+  this.$http.get('http://localhost:3000/products/{productId}');
+}
+
+We can add an options object as the second arg to the get method.
+This can let us add a parent property, an object of parameters.
+The keys are the names of the params in the url and the values are their values:
+
+getProduct(productId) {
+  this.$http.get('http://localhost:3000/products/{productId}', {
+    params: {
+        productId: productId
+    }
+  });
+}
+
+Add a callback for when the promise resolves to pass the response as json and return the promise to the caller:
+
+getProduct(productId) {
+  return this.$http.get('http://localhost:3000/products/{productId}', {
+    params: {
+        productId: productId
+    }
+  }).then(
+    response => response.json(),
+    response => alert("Could not retrieve product")
+  );
+}
+
+We are returning the promise from within the getProduct method, we can invoke the then method on this promise within the created and beforeRouteUpdate hooks and set the products data property.
+
+In the created lifecycle hook invoke the getProduct method, using the then method we set the product data property:
+
+created() {
+  this.getProduct(this.productId)
+      .then(product => this.product = product);
+}
+
+In the beforeUpdate method, access the productId through the params on the to method.
+Then set the product data property:
+
+beforeRouteUpdate(to, from, next) {
+  this.product = this.getProduct(to.params.productId)
+      .then(product => this.product = product);
+      
+  next();
+}
+
+##POST requests
+Let's make it so we can add a new review for a product.
+Send a post request with the review as json in the request body.
+The ViewProduct template has a submit event that invokes a method called addNewReview with the review object as an arg:
+
+<form @submit.prevent="addNewReview(newReview)">
+    <div class="form-group">
+        <label for="reviewName">Name</label>
+        <input type="text" v-model="newReview.reviewer" class="form-control" id="reviewName" placeholder="Name">
+    </div>
+
+    <div class="form-group">
+        <label for="reviewRating">Rating</label>
+        <input type="number" v-model.number="newReview.rating" class="form-control" id="reviewRating" placeholder="Rating">
+    </div>
+
+    <div class="form-group">
+        <label for="reviewText">Text</label>
+        <textarea v-model="newReview.text" class="form-control" id="reviewText" cols="30" rows="10"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Submit Review</button>
+</form>
+
+Create the addNewReview method that takes review as an arg.
+The review object has the same structure on the server we just send the object as json.
+Using the $http post to the server using the uri template for {productId}/reviews.
+Pass in the review as the second arg, followed by an options object for the uri template.
+Pass a params property object and pass in the productId key and value:
+
+addNewReview(review) {
+    this.$http.post('http://localhost:3000/products/{productId}/reviews', review, {
+        params: {
+            productId: this.product.id
+        }
+    });
+}
+
+The node server requires a content type header of application/json for this to work.
+We could specify this by adding a headers object to the options object.
+Actually we don't need to do this as vue-resource does it automatically just as it passes json in the responses if the header is present on the response.
+
+##Using resources
+By using a database model we can use resources to allow the front end to modify the database.
+
+Let's make it so we can delete a review.
+In the ViewProduct component create an anchor tag with a deleteReview method that takes review as an arg:
+
+<a href="#" @click.prevent="deleteReview(review)">delete</a>
+
+Make a new data property called ReviewResource and set it to null.
+
+data() {
+    return {
+        product: null,
+        newReview: {
+            text: '',
+            rating: 0,
+            reviewers: ''
+        },
+        reviewResource: null
+    };
+}
+
+Make a resource within the created lifecycle hook before fetching the product.
+Create a url variable that has the reviewId uri template.
+Instanciate a reviewResource by invoking a $resource method on the component and passing in the url.
+This method returns a resource from the given url:
+
+created() {
+    let url = 'http://localhost:3000/products/{productId}/reviews/{reviewId}';
+    this.reviewResource = this.$resource(url);
+
+    this.getProduct(this.productId)
+        .then(product => this.product = product);
+}
+
+
+We have created the resource and saved it to a data property, we can use it within the deleteReview method.
+We can invoke the delete method on the reviewResource data property.
+
+Create the deleteReview method with review as an arg.
+Invoke the delete method on the reviewResource.
+Pass in an object as an arg to the delete method.
+Specify the id of the product and review we want to delete:
+
+deleteReview(review) {
+    this.reviewResource.delete({
+        productId: this.product.id,
+        reviewId: review.id
+    });
+}
+
+On success we need to remove the review for the product on the front-end.
+The best way is to find the review and slice it from the array.
+But we will use the getProduct method for retrieving and setting the product again at the cost of an additional http request.
+
+Use .then() for the promise.
+On successful response use the getProduct method and pass in the product id, then set the product again.
+For the error response add an error alert:
+
+deleteReview(review) {
+    this.reviewResource.delete({
+        productId: this.product.id,
+        reviewId: review.id
+    }).then(
+        response => {
+            this.getProduct(this.product.id)
+                .then(product => this.product = product);
+        },
+        response => alert("Could not delete review.")
+    );
+}
+
+##Custom resource actions
+A default resource action is save, delete, get, remove, query, and update.
+We can define our own custom actions.
+
+Let's add the ability to soft-delete a review.
+We need to send a delete rquest but with a query param called 'soft' with the value of true.
+In this example the backend won't do anything with the query. 
+
+We need to pass another arg to the $resource method to specify custom actions.
+In the created lifecycle hook create a new var object called customActions.
+Then pass in the names of the custom actions as keys, and their values will be an object of options for the actions.
+Add a soft delete action with a $http method of delete with a different url than what is defined in the resource.
+When using this action, this request url takes priority over the one defined on the resource.
+The url has a soft query param at the end with a value of true.
+
+let customActions = {
+    softDelete: {
+        method: 'DELETE',
+        url: 'http://localhost:3000/products/{productId}/reviews/{reviewId}?soft=true'
+    }
+};
+
+Then we pass this object to the $resource method as the third arg.
+Pass in an empty object as the second arg as we don't need an object of params for now:
+
+this.reviewResource = this.$resource(url, {}, customActions);
+
+Now we can invoke a soft delete action on the resource object instead of the delete method.
+Comment out the delete method and use the softDelete instead:
+
+deleteReview(review) {
+    //this.reviewResource.delete({
+    this.reviewResource.softDelete({
+        productId: this.product.id,
+        reviewId: review.id
+    }).then(
+        response => {
+            this.getProduct(this.product.id)
+                .then(product => this.product = product);
+        },
+        response => alert("Could not delete review.")
+    );
+}
+
+Now when we delete a review a query param will be added to the request body.
+
+##Global configuration
+Configuring vue-resource globally.
+Defining a root url for requests.
+We have been specifying fully qualified urls, which is not ideal.
+
+Open up main.js then use the http method on the global Vue instance (notice we don't use $http like we do within components).
+Add an options object and set a root property to a string, this is the root url that will be used for requests.
+The url does not have to be fully qualified, it can be a relative path as well:
+
+Vue.http.options.root = 'http://localhost:3000';
+
+Open up the ProductList component and remove the first part of the url so all is needed id 'products':
+
+created() {
+    this.$http.get('products')
+        .then(
+            response => response.json(),
+            response => alert("Error")
+        ).then(products => this.products = products);
+}
+
+Don't use '/products' as this won't work as it will then ignore the root url.
+Do the same in the ViewProduct component.
+
+We can specify default headers as well.
+Let's add a x-requested-with header and send it to xml http request.
+Open up main.js and use a headers opject on the http object on the Vue instance.
+Add a common property on the object.
+Add a key using square brackets as it will contain dashes.
+It will be the name of the header and set it so XMLHttpRequest:
+
+Vue.http.headers.common['X-requested-with'] = 'XMLHttpRequest';
+
+This header will be applied to all requests of any http verb.
+If we wanted it to only apply to post requests, swap common out for post.
+
+##Configuration within components
+We can also congigure these locally within components.
+Say we want to add a header only for requests made within the ViewProduct component.
+We add a http object to the component object.
+
+Open up the ViewProduct component.
+Create a http option object.
+Inside that add a headers object where we can specify one or more headers to add to the request:
+
+http: {
+    headers: {
+        'X-CSRF-TOKEN': 'VERY_SECURE_TOKEN_HERE'
+    }
+}
+
+##Interceptors
+Interceptors are used for pre- and postprocessing of a request.
+We can use these as a more dynamic way to add headers.
+Remove the local header from the ViewProduct component.
+
+Push a function to the interceptors array within the http object.
+The function takes a request and next arg.
+Then set the name of the header to 'X-CSRF-TOKEN' with a value of 'VERY_SECURE_TOKEN_HERE'.
+Then as we aren't doing anything further, invoke the next function:
+
+Vue.http.interceptors.push((request, next) => {
+  request.headers.set('X_CSRF-TOKEN', 'VERY_SECURE_TOKEN_HERE');
+  next();
+});
+
+For intercepting responses from the server we pass a callback to the next implication.
+We are passing a function to a function, within a function.
+It takes the response object as it's only arg.
+We will simply lof the response:
+
+Vue.http.interceptors.push((request, next) => {
+  request.headers.set('X_CSRF-TOKEN', 'VERY_SECURE_TOKEN_HERE');
+  next((response) => {
+    console.log(response);
+  });
+});
+
+Here we could manipulate the response.
